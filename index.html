@@ -8,17 +8,28 @@
     <title>接球计数器 Pro</title>
     <style>
         :root { --primary: #007aff; --success: #34c759; --danger: #ff3b30; }
-        body { margin: 0; background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
-        .header { margin-top: 60px; text-align: center; }
-        #counter { font-size: 160px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 20px 0; color: var(--success); text-shadow: 0 0 30px rgba(52, 199, 89, 0.3); }
-        .status-badge { padding: 6px 15px; border-radius: 20px; font-size: 14px; background: #222; color: #888; transition: all 0.3s; }
+        body { margin: 0; background: #000; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
+        .header { margin-top: 50px; text-align: center; }
+        #counter { font-size: 140px; font-weight: 800; margin: 10px 0; color: var(--success); }
+        
+        .panel { background: #1c1c1e; width: 85%; padding: 20px; border-radius: 20px; box-sizing: border-box; }
+        .setting-item { margin-bottom: 20px; }
+        .setting-label { display: flex; justify-content: space-between; margin-bottom: 10px; color: #888; font-size: 14px; }
+        
+        input[type=range] { width: 100%; height: 6px; background: #333; border-radius: 5px; appearance: none; }
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 24px; height: 24px; background: white; border-radius: 50%; border: 1px solid #ddd; }
+
+        .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; background: #333; color: #aaa; margin-bottom: 15px; }
         .active { background: rgba(52, 199, 89, 0.2); color: var(--success); }
-        .controls { position: absolute; bottom: 80px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 20px; }
-        button { width: 200px; height: 60px; border-radius: 30px; border: none; font-size: 20px; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
+
+        .controls { margin-top: auto; margin-bottom: 50px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        button { width: 85%; height: 55px; border-radius: 15px; border: none; font-size: 18px; font-weight: 600; cursor: pointer; }
         #startBtn { background: var(--primary); color: white; }
-        #resetBtn { background: transparent; color: #666; font-size: 16px; }
-        #log { font-size: 13px; color: #444; width: 80%; text-align: center; height: 40px; }
-        .visualizer { position: absolute; top: 0; width: 100%; height: 100px; opacity: 0.3; pointer-events: none; }
+        .secondary-btns { display: flex; width: 85%; gap: 10px; }
+        .secondary-btns button { font-size: 14px; height: 45px; background: #2c2c2e; color: #ccc; }
+        
+        #log { font-size: 12px; color: #555; height: 30px; text-align: center; }
+        .visualizer { position: absolute; top: 0; width: 100%; height: 80px; opacity: 0.5; }
     </style>
 </head>
 <body>
@@ -26,69 +37,98 @@
     <canvas id="visualizer" class="visualizer"></canvas>
 
     <div class="header">
-        <div id="status" class="status-badge">等待授权麦克风</div>
+        <div id="status" class="status-badge">未就绪</div>
         <div id="counter">0</div>
     </div>
 
+    <div class="panel">
+        <div class="setting-item">
+            <div class="setting-label">
+                <span>触发灵敏度 (阈值)</span>
+                <span id="threshVal">0.35</span>
+            </div>
+            <input type="range" id="threshSlider" min="0.05" max="0.8" step="0.01" value="0.35">
+        </div>
+        <div id="log">等待点击开始...</div>
+    </div>
+
     <div class="controls">
-        <div id="log">请在安静环境下开始测试</div>
-        <button id="startBtn">点击开始监测</button>
-        <button id="resetBtn">归零</button>
+        <button id="startBtn">开始监测</button>
+        <div class="secondary-btns">
+            <button onclick="resetCount()">计数归零</button>
+            <button onclick="forceReload()">清除缓存刷新</button>
+        </div>
     </div>
 
     <script>
-        // --- 核心算法参数 ---
-        const CONFIG = {
-            threshold: 0.35,      // 灵敏度：数值越小越灵敏 (0.1 ~ 0.9)
-            dropWindow: 650,      // 掉球判定窗：在此时间内有二次撞击视为掉球 (ms)
-            coolDown: 200,        // 连击过滤：防止单次声音被重复计算 (ms)
-            fftSize: 512
-        };
-
         let count = 0;
         let isRunning = false;
-        let audioCtx, analyser, dataArray;
+        let audioCtx, analyser, dataArray, highPassFilter;
         let lastEventTime = 0;
         let isWaitingForDrop = false;
         let wakeLock = null;
 
-        const startBtn = document.getElementById('startBtn');
-        const counterEl = document.getElementById('counter');
-        const statusEl = document.getElementById('status');
-        const logEl = document.getElementById('log');
+        const CONFIG = { dropWindow: 650 };
 
-        // 1. 初始化音频和屏幕常亮
-        startBtn.onclick = async () => {
-            if (isRunning) return;
+        // 1. 灵敏度实时调节
+        const threshSlider = document.getElementById('threshSlider');
+        const threshVal = document.getElementById('threshVal');
+        threshSlider.oninput = () => {
+            threshVal.innerText = threshSlider.value;
+        };
 
+        // 2. 初始化
+        document.getElementById('startBtn').onclick = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
+
+                // 滤波算法：切掉3000Hz以下的音乐和人声
+                highPassFilter = audioCtx.createBiquadFilter();
+                highPassFilter.type = "highpass";
+                highPassFilter.frequency.value = 3000;
+
                 analyser = audioCtx.createAnalyser();
-                analyser.fftSize = CONFIG.fftSize;
-                source.connect(analyser);
+                analyser.fftSize = 512;
+
+                source.connect(highPassFilter);
+                highPassFilter.connect(analyser);
                 dataArray = new Float32Array(analyser.fftSize);
 
-                // 激活屏幕常亮
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                }
-
+                await requestWakeLock();
+                
                 isRunning = true;
-                startBtn.style.display = 'none';
-                statusEl.innerText = "监测中 - 屏幕常亮已开启";
-                statusEl.classList.add('active');
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('status').innerText = "监测中 | 高频滤波已激活";
+                document.getElementById('status').classList.add('active');
                 
                 requestAnimationFrame(update);
             } catch (err) {
-                alert("无法访问麦克风或您的浏览器不支持此功能");
-                logEl.innerText = err.message;
+                alert("请允许麦克风权限");
             }
         };
 
-        // 2. 实时监测逻辑
+        // 3. 常亮逻辑优化：处理切换程序后的重连
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log("常亮激活");
+                } catch (err) { console.log(err); }
+            }
+        }
+
+        // 当用户切回 App 时，尝试重新申请常亮
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
+        // 4. 核心检测算法
         function update() {
+            if (!isRunning) return;
             analyser.getFloatTimeDomainData(dataArray);
             
             let maxAmp = 0;
@@ -98,79 +138,70 @@
             }
 
             const now = Date.now();
+            const currentThreshold = parseFloat(threshSlider.value);
 
-            // 核心判定算法
-            if (maxAmp > CONFIG.threshold) {
-                // 如果当前距离上一次声音非常近（比如声音的余响），直接忽略
-                if (now - lastEventTime > 50) { 
-                    handleSoundImpact(now);
-                }
+            if (maxAmp > currentThreshold && (now - lastEventTime > 50)) {
+                handleImpact(now);
             }
 
-            // 绘制简单的波形图（视觉反馈）
             drawVisualizer();
             requestAnimationFrame(update);
         }
 
-        function handleSoundImpact(now) {
+        function handleImpact(now) {
+            const logEl = document.getElementById('log');
             if (!isWaitingForDrop) {
-                // 可能是接球，先加分，进入观察期
                 count++;
                 isWaitingForDrop = true;
                 lastEventTime = now;
-                updateDisplay();
-                logEl.innerText = "检测到撞击...";
+                updateUI();
+                logEl.innerText = "收到撞击...";
                 
-                // 观察期结束后，如果没有后续撞击，则保留分数
                 setTimeout(() => {
-                    if (isWaitingForDrop && Date.now() - lastEventTime >= CONFIG.dropWindow) {
+                    if (isWaitingForDrop && (Date.now() - lastEventTime >= CONFIG.dropWindow)) {
                         isWaitingForDrop = false;
-                        logEl.innerText = "确认接球！";
-                        logEl.style.color = "#34c759";
+                        logEl.innerText = "确认接到！";
                     }
                 }, CONFIG.dropWindow);
-
             } else {
-                // 在观察期内又听到了声音 -> 判定为掉球（连续啪啪声）
                 if (now - lastEventTime < CONFIG.dropWindow) {
                     count = Math.max(0, count - 1);
-                    isWaitingForDrop = false; // 立即关闭观察期
-                    updateDisplay();
-                    logEl.innerText = "掉球检测：计数扣除";
-                    logEl.style.color = "#ff3b30";
-                    lastEventTime = now; // 更新时间，防止掉球的最后一下又触发接球
+                    isWaitingForDrop = false;
+                    updateUI();
+                    logEl.innerText = "检测到连响（掉球）";
+                    lastEventTime = now;
                 }
             }
         }
 
-        function updateDisplay() {
-            counterEl.innerText = count;
-            // 简单的动画效果
-            counterEl.style.transform = "scale(1.1)";
-            setTimeout(() => counterEl.style.transform = "scale(1)", 100);
+        function updateUI() {
+            document.getElementById('counter').innerText = count;
         }
 
-        document.getElementById('resetBtn').onclick = () => {
+        function resetCount() {
             count = 0;
-            updateDisplay();
-            logEl.innerText = "已清零";
-        };
+            updateUI();
+            document.getElementById('log').innerText = "已重置";
+        }
 
-        // 3. 可视化背景（让用户知道程序没死）
-        const canvas = document.getElementById('visualizer');
-        const ctx = canvas.getContext('2d');
-        function drawVisualizer() {
-            const width = canvas.width = window.innerWidth;
-            const height = canvas.height = 100;
-            ctx.clearRect(0, 0, width, height);
-            ctx.beginPath();
-            ctx.moveTo(0, height/2);
-            for(let i=0; i<dataArray.length; i++) {
-                const x = (i / dataArray.length) * width;
-                const y = (dataArray[i] * height) + height/2;
-                ctx.lineTo(x, y);
+        function forceReload() {
+            if(confirm("将清除缓存并重新加载，确定吗？")) {
+                window.location.reload(true);
             }
+        }
+
+        // 5. 简单的可视化
+        function drawVisualizer() {
+            const canvas = document.getElementById('visualizer');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width = window.innerWidth;
+            const h = canvas.height = 80;
+            ctx.clearRect(0,0,w,h);
+            ctx.beginPath();
             ctx.strokeStyle = '#007aff';
+            for(let i=0; i<dataArray.length; i++) {
+                ctx.lineTo((i/dataArray.length)*w, (dataArray[i]*h)+h/2);
+            }
             ctx.stroke();
         }
     </script>
