@@ -7,46 +7,37 @@
     <title>接球计数器 AR Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
-        :root { --primary: #007aff; --success: #00ff41; --danger: #ff3b30; --neon: #00f2ff; --panel-bg: rgba(10, 10, 12, 0.6); }
+        :root { --primary: #007aff; --success: #00ff41; --neon: #00f2ff; }
         body { margin: 0; background: #000; color: #fff; font-family: -apple-system, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
         
-        /* --- 核心：沉浸式背景视频 --- */
-        #video-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; display: none; overflow: hidden; }
-        #webcam { width: 100%; height: 100%; object-fit: cover; transform: rotateY(180deg); filter: brightness(1.1) contrast(1.1); }
-        /* 骨骼叠加层 */
+        /* 沉浸式全屏背景 */
+        #video-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; display: none; background: #000; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: rotateY(180deg); }
         #canvas-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); pointer-events: none; }
 
         /* 全息频谱 */
         #visualizer { position: absolute; top: 0; width: 100%; height: 180px; z-index: 10; pointer-events: none; mix-blend-mode: screen; opacity: 0.7; }
 
-        /* 沉浸式 UI 状态栏 */
-        .status-bar { display: flex; gap: 8px; position: absolute; top: calc(env(safe-area-inset-top) + 15px); z-index: 15; mix-blend-mode: difference; }
-        .indicator { padding: 4px 10px; border-radius: 15px; font-size: 10px; background: rgba(0,0,0,0.5); color: #888; border: 1px solid #444; backdrop-filter: blur(5px); }
-        .ind-active { border-color: var(--neon); color: var(--neon); text-shadow: 0 0 5px var(--neon); box-shadow: 0 0 5px var(--neon); }
+        .status-bar { display: flex; gap: 8px; position: absolute; top: calc(env(safe-area-inset-top) + 15px); z-index: 15; }
+        .indicator { padding: 4px 10px; border-radius: 15px; font-size: 10px; background: rgba(0,0,0,0.6); color: #666; border: 1px solid #333; backdrop-filter: blur(5px); }
+        .ind-active { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 5px var(--neon); }
 
-        .header { margin-top: auto; margin-bottom: 20px; text-align: center; z-index: 15; pointer-events: none; }
+        .header { margin-top: auto; margin-bottom: 20px; text-align: center; z-index: 15; }
         #counter { font-size: 150px; font-weight: 900; color: var(--success); text-shadow: 0 0 30px var(--success); line-height: 1; margin: 0; }
-        #log { font-size: 14px; color: #fff; height: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+        #log { font-size: 14px; color: #fff; height: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); margin-top: 10px; }
         
-        /* 毛玻璃 UI 面板 */
-        .panel { background: var(--panel-bg); width: 90%; padding: 15px 20px; border-radius: 24px; box-sizing: border-box; z-index: 15; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); margin-bottom: 15px; transition: 0.3s; }
-        .setting-label { display: flex; justify-content: space-between; margin-bottom: 8px; color: #aaa; font-size: 13px; }
+        .panel { background: rgba(10, 10, 12, 0.6); width: 90%; padding: 20px; border-radius: 24px; box-sizing: border-box; z-index: 15; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); margin-bottom: 15px; }
+        .switch-row { display: flex; justify-content: space-between; align-items: center; }
         
-        .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        input[type="checkbox"] { width: 48px; height: 26px; appearance: none; background: rgba(255,255,255,0.1); border-radius: 20px; position: relative; transition: .3s; outline: none; border: 1px solid rgba(255,255,255,0.2); }
-        input[type="checkbox"]:checked { background: var(--primary); border-color: var(--primary); }
+        input[type="checkbox"] { width: 50px; height: 26px; appearance: none; background: rgba(255,255,255,0.1); border-radius: 20px; position: relative; border: 1px solid rgba(255,255,255,0.2); }
+        input[type="checkbox"]:checked { background: var(--primary); }
         input[type="checkbox"]:before { content: ''; position: absolute; width: 22px; height: 22px; background: white; border-radius: 50%; top: 1px; left: 1px; transition: .3s; }
-        input[type="checkbox"]:checked:before { left: 23px; }
-
-        input[type=range] { width: 100%; height: 4px; background: rgba(255,255,255,0.2); border-radius: 5px; appearance: none; outline: none; }
-        input[type=range]::-webkit-slider-thumb { appearance: none; width: 22px; height: 22px; background: #fff; border-radius: 50%; box-shadow: 0 0 10px var(--neon); }
+        input[type="checkbox"]:checked:before { left: 25px; }
 
         .controls { margin-bottom: calc(env(safe-area-inset-bottom) + 20px); width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 15; }
-        button { width: 90%; height: 55px; border-radius: 16px; border: none; font-size: 17px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-        #startBtn { background: var(--primary); color: white; box-shadow: 0 0 15px rgba(0, 122, 255, 0.5); }
-        #cameraBtn { background: rgba(0,0,0,0.8); color: var(--neon); border: 2px solid var(--neon); display: none; backdrop-filter: blur(5px); }
-        .secondary-btns { display: flex; width: 90%; gap: 10px; }
-        .secondary-btns button { font-size: 13px; height: 42px; background: rgba(255,255,255,0.1); color: #ccc; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); }
+        button { width: 90%; height: 55px; border-radius: 16px; border: none; font-size: 17px; font-weight: 700; transition: 0.2s; }
+        #startBtn { background: var(--primary); color: white; }
+        #cameraBtn { background: rgba(0,0,0,0.8); color: var(--neon); border: 2px solid var(--neon); display: none; }
     </style>
 </head>
 <body>
@@ -61,7 +52,7 @@
     <div class="status-bar">
         <div id="ind-audio" class="indicator">声音: 待机</div>
         <div id="ind-vision" class="indicator">AR: 禁用</div>
-        <div id="ind-ai" class="indicator">AI: 待载</div>
+        <div id="ind-ai" class="indicator">AI: 待命</div>
     </div>
 
     <div class="header">
@@ -69,44 +60,35 @@
         <div id="log">准备就绪 // 等待音频上行</div>
     </div>
 
-    <div class="panel" id="mainPanel">
+    <div class="panel">
         <div class="switch-row">
-            <span>开启进阶 AR 视觉模式</span>
+            <span>开启全屏 AR 视觉背景</span>
             <input type="checkbox" id="visionToggle">
         </div>
-        <div style="margin-top:15px;">
-            <input type="range" id="threshSlider" min="0.05" max="0.8" step="0.01" value="0.35">
-        </div>
+        <input type="range" id="threshSlider" style="width:100%; margin-top:20px;" min="0.05" max="0.8" step="0.01" value="0.35">
     </div>
 
     <div class="controls">
-        <button id="cameraBtn">【第 2 步】点此激活 AR 摄像头</button>
-        <button id="startBtn">【第 1 步】启动音频监测</button>
-        <div class="secondary-btns">
-            <button onclick="resetCount()">计数清零</button>
-            <button onclick="location.reload()">刷新重置</button>
-        </div>
+        <button id="cameraBtn">开启背景视频</button>
+        <button id="startBtn">启动音频监测</button>
+        <button style="background:none; color:#555; height:30px; font-size:12px;" onclick="location.reload()">强制刷新</button>
     </div>
 
 <script type="module">
     let count = 0, isRunning = false, lastEventTime = 0, audioCtx, analyser, dataArray, poseLandmarker;
-    let isVisionActive = false, isAIReady = false;
+    let isVisionActive = false, isAIReady = false, streamActive = false;
     
     const vision = window.tasksVision;
     const webcam = document.getElementById("webcam");
-    const canvasCtx = document.getElementById("canvas-overlay").getContext("2d");
 
-    // 1. 全息频谱渲染
+    // 1. 频谱绘制
     function drawVisualizer() {
         if (!analyser) return;
-        const canvas = document.getElementById('visualizer');
-        const ctx = canvas.getContext('2d');
+        const canvas = document.getElementById('visualizer'), ctx = canvas.getContext('2d');
         const w = canvas.width = window.innerWidth, h = canvas.height = 180;
         analyser.getFloatTimeDomainData(dataArray);
         ctx.clearRect(0,0,w,h);
-        ctx.beginPath();
-        ctx.lineWidth = 2.5;
-        // 如果开启 AR，波纹变为青蓝色，否则为绿色
+        ctx.beginPath(); ctx.lineWidth = 2.5;
         ctx.strokeStyle = isVisionActive ? '#00f2ff' : '#00ff41';
         for(let i=0; i<dataArray.length; i++) {
             const x = (i/dataArray.length)*w, y = (dataArray[i]*h*1.8)+h/2;
@@ -122,58 +104,57 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const source = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 512; source.connect(analyser);
-            dataArray = new Float32Array(analyser.fftSize);
+            analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+            source.connect(analyser); dataArray = new Float32Array(analyser.fftSize);
 
             isRunning = true;
             document.getElementById('startBtn').style.display = 'none';
-            document.getElementById('ind-audio').innerText = "声音: 运行";
             document.getElementById('ind-audio').classList.add('ind-active');
-            document.getElementById('log').innerText = "音频正常，可开启 AR 进阶模式";
+            document.getElementById('log').innerText = "音频已锁定，可开启 AR 背景";
             requestAnimationFrame(drawVisualizer);
             requestAnimationFrame(audioLoop);
-        } catch (err) { alert("麦克风启动失败，请检查 HTTPS 和权限"); }
+        } catch (err) { alert("麦克风启动失败，请检查 HTTPS 权限"); }
     };
 
-    // 3. AR 视觉权限流程优化 (针对手机 Safari)
+    // 3. 视觉权限修复：分步解耦
     document.getElementById('visionToggle').onchange = (e) => {
         if (e.target.checked) {
             document.getElementById('cameraBtn').style.display = 'block';
-            document.getElementById('log').innerText = "等待摄像头授权...";
+            document.getElementById('log').innerText = "请点击上方按钮开启视频";
         } else {
             document.getElementById('cameraBtn').style.display = 'none';
             document.getElementById('video-container').style.display = "none";
-            document.getElementById('ind-vision').classList.remove('ind-active');
             isVisionActive = false;
         }
     };
 
     document.getElementById('cameraBtn').onclick = async () => {
         try {
-            // A. 先立刻启动视频流，防止 Safari 超时
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-            webcam.srcObject = stream;
+            // A. 第一步：仅启动视频流，不加载 AI
+            if (!streamActive) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                webcam.srcObject = stream;
+                streamActive = true;
+            }
+            
             document.getElementById('video-container').style.display = "block";
-            document.getElementById('ind-vision').innerText = "AR: 激活";
             document.getElementById('ind-vision').classList.add('ind-active');
+            document.getElementById('cameraBtn').innerText = "正在激活 AI 引擎...";
             isVisionActive = true;
 
-            // B. 后异步加载 AI 模型
+            // B. 第二步：异步静默加载 AI
             if (!isAIReady) {
-                document.getElementById('log').innerText = "正在加载 AI 动力学核心...";
                 const FilesetResolver = await vision.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
                 poseLandmarker = await vision.PoseLandmarker.createFromOptions(FilesetResolver, {
                     baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`, delegate: "GPU" },
                     runningMode: "VIDEO", numPoses: 1
                 });
                 isAIReady = true;
-                document.getElementById('ind-ai').innerText = "AI: 锁定";
                 document.getElementById('ind-ai').classList.add('ind-active');
-                document.getElementById('log').innerText = "声影双重判定模式已建立";
+                document.getElementById('log').innerText = "AR 画面与 AI 引擎已同步";
             }
             document.getElementById('cameraBtn').style.display = 'none';
-        } catch (err) { alert("摄像头无法调用。请确保 Safari 已授权且使用 HTTPS。"); }
+        } catch (err) { alert("摄像头启动失败：请检查 Safari 隐私设置"); }
     };
 
     // 4. 判定循环
@@ -182,30 +163,28 @@
         analyser.getFloatTimeDomainData(dataArray);
         let maxAmp = 0;
         for (let i = 0; i < dataArray.length; i++) maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
-
         const threshold = parseFloat(document.getElementById('threshSlider').value);
         const now = Date.now();
 
         if (maxAmp > threshold && (now - lastEventTime > 750)) {
             let pass = true;
+            // 只有视频在运行且 AI 就绪时才进行姿态校验
             if (isVisionActive && isAIReady && poseLandmarker) {
                 const res = poseLandmarker.detectForVideo(webcam, performance.now());
                 if (res.landmarks.length > 0) {
                     const lm = res.landmarks[0];
-                    // 动作判据：双手间距必须在接球范围内
                     const dist = Math.sqrt(Math.pow(lm[15].x - lm[16].x, 2) + Math.pow(lm[15].y - lm[16].y, 2));
-                    if (dist > 0.38) pass = false; // 手没合拢则判定为噪音
+                    if (dist > 0.4) pass = false; 
                 }
             }
             if (pass) {
                 count++; lastEventTime = now;
                 document.getElementById('counter').innerText = count;
-                if (navigator.vibrate) navigator.vibrate(60); // 触感反馈
+                if (navigator.vibrate) navigator.vibrate(60);
             }
         }
         requestAnimationFrame(audioLoop);
     }
-
     window.resetCount = () => { count = 0; document.getElementById('counter').innerText = 0; };
 </script>
 </body>
