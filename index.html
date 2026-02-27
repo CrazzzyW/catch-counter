@@ -3,108 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>接球计数器 Pro (视觉+音频版)</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+    <title>接球计数器 Pro - 权限分离版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
-        :root { --primary: #007aff; --success: #34c759; --danger: #ff3b30; }
-        body { margin: 0; background: #000; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        :root { --primary: #007aff; --success: #34c759; --bg: #000; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; }
         
-        /* 视频容器：用于人物框锁定 */
-        #video-container { position: relative; width: 100%; height: 35vh; background: #111; display: flex; justify-content: center; overflow: hidden; }
-        #webcam { height: 100%; transform: rotateY(180deg); }
-        #canvas-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); }
+        /* 视频区域初始高度为0，仅在开启视觉时展开 */
+        #video-container { position: relative; width: 100%; height: 0; background: #111; transition: height 0.5s ease; overflow: hidden; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: rotateY(180deg); }
+        #canvas-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); pointer-events: none; }
 
-        .header { text-align: center; padding: 10px; }
-        #counter { font-size: 80px; font-weight: 800; color: var(--success); margin: 0; }
+        .header { text-align: center; padding: 20px 0; }
+        #counter { font-size: 120px; font-weight: 800; color: var(--success); margin: 0; }
+        #log { font-size: 14px; color: #888; margin-top: 10px; height: 20px; }
         
-        .panel { background: #1c1c1e; width: 90%; margin: 10px auto; padding: 15px; border-radius: 20px; box-sizing: border-box; flex-grow: 1; overflow-y: auto; }
-        .setting-item { margin-bottom: 15px; }
-        .setting-label { display: flex; justify-content: space-between; font-size: 13px; color: #888; margin-bottom: 5px; }
+        .panel { background: #1c1c1e; width: 90%; margin: 10px auto; padding: 20px; border-radius: 20px; flex-grow: 1; }
+        .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         
-        /* 开关样式 */
-        .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        
+        /* 基础开关样式 */
+        input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: #333; border-radius: 20px; position: relative; }
+        input[type="checkbox"]:checked { background: var(--primary); }
+        input[type="checkbox"]:before { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: 0.2s; }
+        input[type="checkbox"]:checked:before { left: 22px; }
+
         .controls { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        button { width: 100%; height: 50px; border-radius: 12px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; }
-        #startBtn { background: var(--primary); color: white; }
-        
-        #log { font-size: 12px; color: var(--success); min-height: 20px; text-align: center; margin-top: 5px; }
-        .roi-status { font-size: 10px; color: #ff9500; }
+        button { width: 100%; height: 55px; border-radius: 15px; border: none; font-size: 18px; font-weight: 600; }
+        #mainBtn { background: var(--primary); color: white; }
     </style>
 </head>
 <body>
 
     <div id="video-container">
-        <video id="webcam" autoplay playsinline></video>
+        <video id="webcam" autoplay playsinline muted></video>
         <canvas id="canvas-overlay"></canvas>
     </div>
 
     <div class="header">
         <div id="counter">0</div>
-        <div id="log">等待启动...</div>
+        <div id="log">准备就绪</div>
     </div>
 
     <div class="panel">
         <div class="switch-row">
-            <span>视觉辅助 (双重判据)</span>
-            <input type="checkbox" id="visionToggle" checked>
+            <span>开启视觉校验 (需摄像头)</span>
+            <input type="checkbox" id="visionToggle">
         </div>
         <div class="switch-row">
-            <span>人物框锁定 (ROI)</span>
-            <input type="checkbox" id="roiToggle" checked>
-        </div>
-        <div class="switch-row">
-            <span>自动截图 (抓拍成功瞬间)</span>
-            <input type="checkbox" id="screenshotToggle">
+            <span>人物区域锁定 (ROI)</span>
+            <input type="checkbox" id="roiToggle">
         </div>
         
-        <div class="setting-item">
-            <div class="setting-label"><span>声音灵敏度</span><span id="threshVal">0.35</span></div>
-            <input type="range" id="threshSlider" min="0.05" max="0.8" step="0.01" value="0.35">
+        <div style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #888;">
+                <span>声音灵敏度</span><span id="threshVal">0.35</span>
+            </div>
+            <input type="range" id="threshSlider" style="width:100%" min="0.05" max="0.8" step="0.01" value="0.35">
         </div>
-        
-        <div id="capture-preview" style="display: flex; gap: 5px; overflow-x: auto; margin-top: 10px;"></div>
     </div>
 
     <div class="controls">
-        <button id="startBtn">启动 Pro 系统</button>
-        <button style="background:#2c2c2e; color:#ccc;" onclick="resetCount()">计数重置</button>
+        <button id="mainBtn">启动音频监测</button>
+        <button style="background:#2c2c2e; color:#ccc;" onclick="location.reload()">重置</button>
     </div>
 
 <script type="module">
-    import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
+    const vision = window.tasksVision;
+    let poseLandmarker, audioCtx, analyser, dataArray;
+    let isAudioRunning = false, isVisionActive = false;
+    let count = 0, lastEventTime = 0, personInROI = true;
 
-    let count = 0;
-    let isRunning = false;
-    let audioCtx, analyser, dataArray;
-    let lastEventTime = 0;
-    let poseLandmarker;
-    let webcamElement = document.getElementById("webcam");
-    let canvasElement = document.getElementById("canvas-overlay");
-    let canvasCtx = canvasElement.getContext("2d");
-    let drawingUtils = new DrawingUtils(canvasCtx);
-    let results = undefined;
-    let personInROI = false;
-
-    // --- 1. 初始化姿态模型 ---
-    async function initPose() {
-        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
-        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`, delegate: "GPU" },
-            runningMode: "VIDEO",
-            numPoses: 1
-        });
-    }
-
-    // --- 2. 启动逻辑 ---
-    document.getElementById('startBtn').onclick = async () => {
-        if (!poseLandmarker) await initPose();
-        
+    // --- 1. 音频启动逻辑 ---
+    document.getElementById('mainBtn').onclick = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode: "user" } });
-            webcamElement.srcObject = stream;
-            
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const source = audioCtx.createMediaStreamSource(stream);
             analyser = audioCtx.createAnalyser();
@@ -112,116 +84,90 @@
             source.connect(analyser);
             dataArray = new Float32Array(analyser.fftSize);
 
-            isRunning = true;
-            document.getElementById('startBtn').style.display = 'none';
-            predictWebcam();
+            isAudioRunning = true;
+            document.getElementById('mainBtn').style.display = 'none';
+            document.getElementById('log').innerText = "音频监测中...";
+            requestAnimationFrame(audioLoop);
         } catch (err) {
-            alert("需要相机和麦克风权限");
+            alert("请允许麦克风权限以开始计数");
         }
     };
 
-    // --- 3. 核心循环：音视频双重检测 ---
-    async function predictWebcam() {
-        if (!isRunning) return;
-
-        // A. 视觉处理：人物框锁定
-        let startTimeMs = performance.now();
-        if (webcamElement.currentTime !== lastEventTime) {
-            results = poseLandmarker.detectForVideo(webcamElement, startTimeMs);
-            drawROI();
+    // --- 2. 视觉权限按需获取 ---
+    document.getElementById('visionToggle').onchange = async (e) => {
+        if (e.target.checked) {
+            try {
+                document.getElementById('log').innerText = "正在请求摄像头...";
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                document.getElementById('webcam').srcObject = stream;
+                document.getElementById('video-container').style.height = "30vh";
+                
+                // 加载 MediaPipe 模型
+                if (!poseLandmarker) {
+                    const filesetResolver = await vision.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+                    poseLandmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
+                        baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`, delegate: "GPU" },
+                        runningMode: "VIDEO", numPoses: 1
+                    });
+                }
+                isVisionActive = true;
+                document.getElementById('log').innerText = "声影双重监测已激活";
+            } catch (err) {
+                e.target.checked = false;
+                alert("无法获取摄像头权限");
+            }
+        } else {
+            isVisionActive = false;
+            document.getElementById('video-container').style.height = "0";
+            document.getElementById('log').innerText = "切换回纯音频模式";
         }
+    };
 
-        // B. 音频处理
+    // --- 3. 混合检测循环 ---
+    function audioLoop() {
+        if (!isAudioRunning) return;
+
+        // 音频分析
         analyser.getFloatTimeDomainData(dataArray);
         let maxAmp = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
-        }
+        for (let i = 0; i < dataArray.length; i++) maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
 
         const now = Date.now();
         const threshold = parseFloat(document.getElementById('threshSlider').value);
+        document.getElementById('threshVal').innerText = threshold;
 
-        // C. 双重判据触发逻辑
-        if (maxAmp > threshold && (now - lastEventTime > 800)) {
-            let canCount = true;
-
-            // 如果开启 ROI 锁定，必须人在框内才计数
-            if (document.getElementById('roiToggle').checked && !personInROI) {
-                canCount = false;
-                document.getElementById('log').innerText = "不在锁定区域，跳过计数";
+        if (maxAmp > threshold && (now - lastEventTime > 700)) {
+            // 如果开启了视觉，进行二次校验
+            let passVision = true;
+            if (isVisionActive && poseLandmarker) {
+                const results = poseLandmarker.detectForVideo(document.getElementById('webcam'), performance.now());
+                passVision = checkPose(results);
             }
 
-            // 如果开启视觉辅助，检查手部位置突变 (加速度判据)
-            if (document.getElementById('visionToggle').checked && canCount) {
-                if (!checkHandMovement()) {
-                    // 如果声音响了但手没动，可能是环境噪音
-                    canCount = false; 
-                    document.getElementById('log').innerText = "干扰噪音过滤...";
-                }
-            }
-
-            if (canCount) {
+            if (passVision) {
                 count++;
                 lastEventTime = now;
-                updateUI();
-                if (document.getElementById('screenshotToggle').checked) takeScreenshot();
+                document.getElementById('counter').innerText = count;
+                if (navigator.vibrate) navigator.vibrate(50);
             }
         }
-
-        window.requestAnimationFrame(predictWebcam);
+        requestAnimationFrame(audioLoop);
     }
 
-    // --- 4. 视觉逻辑子函数 ---
-    function drawROI() {
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        personInROI = false;
-
-        if (results && results.landmarks.length > 0) {
-            const landmarks = results.landmarks[0];
-            // 判断人在不在中央区域 (ROI: 屏幕左右 15% 以外)
-            const hip = landmarks[24]; // 右髋
-            if (hip.x > 0.15 && hip.x < 0.85) {
-                personInROI = true;
-                canvasCtx.strokeStyle = "#34c759";
-                document.getElementById('log').innerText = "目标锁定";
-            } else {
-                canvasCtx.strokeStyle = "#ff3b30";
-            }
-            
-            // 绘制骨骼预览
-            drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS);
-            drawingUtils.drawLandmarks(landmarks, { radius: 2 });
-        }
-    }
-
-    // 判断接球视觉特征：双手是否在躯干前方合拢
-    function checkHandMovement() {
-        if (!results || results.landmarks.length === 0) return true; // 无视觉则信任音频
+    function checkPose(results) {
+        if (!results || results.landmarks.length === 0) return true; // 没拍到人时回退到纯音频
         const lm = results.landmarks[0];
-        const leftWrist = lm[15];
-        const rightWrist = lm[16];
-        // 视觉判据：双手间距小于一定距离（归一化坐标）
-        const dist = Math.sqrt(Math.pow(leftWrist.x - rightWrist.x, 2) + Math.pow(leftWrist.y - rightWrist.y, 2));
-        return dist < 0.25; // 接球时双手应靠近
+        
+        // ROI 判定：人在画面横向 20%-80% 之间
+        if (document.getElementById('roiToggle').checked) {
+            const centerX = (lm[23].x + lm[24].x) / 2;
+            if (centerX < 0.2 || centerX > 0.8) return false;
+        }
+        
+        // 视觉加速度补偿：接球时双手应靠近
+        const dist = Math.sqrt(Math.pow(lm[15].x - lm[16].x, 2) + Math.pow(lm[15].y - lm[16].y, 2));
+        return dist < 0.25; 
     }
-
-    function takeScreenshot() {
-        const preview = document.getElementById('capture-preview');
-        const snap = document.createElement('canvas');
-        snap.width = webcamElement.videoWidth / 4;
-        snap.height = webcamElement.videoHeight / 4;
-        snap.getContext('2d').drawImage(webcamElement, 0, 0, snap.width, snap.height);
-        const img = new Image();
-        img.src = snap.toDataURL();
-        img.style.borderRadius = "8px";
-        img.style.border = "2px solid #34c759";
-        preview.prepend(img);
-        if (preview.children.length > 5) preview.lastChild.remove();
-    }
-
-    window.resetCount = () => { count = 0; updateUI(); };
-    function updateUI() { document.getElementById('counter').innerText = count; }
-
 </script>
 </body>
 </html>
