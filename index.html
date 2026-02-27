@@ -74,7 +74,7 @@
     </div>
 
     <div class="controls">
-        <button id="cameraBtn">点击激活 AI 摄像头</button>
+        <button id="cameraBtn">点击激活摄像头</button>
         <button id="startBtn">启动音频监测</button>
         <div class="secondary-btns">
             <button onclick="resetCount()">计数归零</button>
@@ -161,7 +161,7 @@
 
         document.getElementById('cameraBtn').onclick = async () => {
             try {
-                document.getElementById('log').innerText = "正在初始化 AI 模型...";
+                document.getElementById('log').innerText = "正在初始化模型...";
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
                 webcam.srcObject = stream;
                 document.getElementById('video-container').style.height = "30vh";
@@ -231,3 +231,4 @@
     </script>
 </body>
 </html>
+
