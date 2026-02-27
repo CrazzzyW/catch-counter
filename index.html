@@ -1,191 +1,525 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>接球计数器 AR Pro</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
-    <style>
-        :root { --primary: #007aff; --success: #00ff41; --neon: #00f2ff; }
-        body { margin: 0; background: #000; color: #fff; font-family: -apple-system, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
-        
-        /* 沉浸式全屏背景 */
-        #video-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; display: none; background: #000; }
-        #webcam { width: 100%; height: 100%; object-fit: cover; transform: rotateY(180deg); }
-        #canvas-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); pointer-events: none; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>接球计数器 AR Pro</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
 
-        /* 全息频谱 */
-        #visualizer { position: absolute; top: 0; width: 100%; height: 180px; z-index: 10; pointer-events: none; mix-blend-mode: screen; opacity: 0.7; }
+  <style>
+    :root { --primary:#007aff; --success:#00ff41; --neon:#00f2ff; }
+    body { margin:0; background:#000; color:#fff; font-family:-apple-system,sans-serif; height:100vh; overflow:hidden; display:flex; flex-direction:column; align-items:center; }
 
-        .status-bar { display: flex; gap: 8px; position: absolute; top: calc(env(safe-area-inset-top) + 15px); z-index: 15; }
-        .indicator { padding: 4px 10px; border-radius: 15px; font-size: 10px; background: rgba(0,0,0,0.6); color: #666; border: 1px solid #333; backdrop-filter: blur(5px); }
-        .ind-active { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 5px var(--neon); }
+    /* 背景视频 + 叠加层 */
+    #video-container { position:fixed; inset:0; z-index:0; display:none; background:#000; }
+    #webcam { width:100%; height:100%; object-fit:cover; transform:rotateY(180deg); }
+    #canvas-overlay { position:absolute; inset:0; width:100%; height:100%; transform:rotateY(180deg); pointer-events:none; }
 
-        .header { margin-top: auto; margin-bottom: 20px; text-align: center; z-index: 15; }
-        #counter { font-size: 150px; font-weight: 900; color: var(--success); text-shadow: 0 0 30px var(--success); line-height: 1; margin: 0; }
-        #log { font-size: 14px; color: #fff; height: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); margin-top: 10px; }
-        
-        .panel { background: rgba(10, 10, 12, 0.6); width: 90%; padding: 20px; border-radius: 24px; box-sizing: border-box; z-index: 15; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); margin-bottom: 15px; }
-        .switch-row { display: flex; justify-content: space-between; align-items: center; }
-        
-        input[type="checkbox"] { width: 50px; height: 26px; appearance: none; background: rgba(255,255,255,0.1); border-radius: 20px; position: relative; border: 1px solid rgba(255,255,255,0.2); }
-        input[type="checkbox"]:checked { background: var(--primary); }
-        input[type="checkbox"]:before { content: ''; position: absolute; width: 22px; height: 22px; background: white; border-radius: 50%; top: 1px; left: 1px; transition: .3s; }
-        input[type="checkbox"]:checked:before { left: 25px; }
+    /* 频谱 */
+    #visualizer { position:absolute; top:0; width:100%; height:180px; z-index:10; pointer-events:none; mix-blend-mode:screen; opacity:.7; }
 
-        .controls { margin-bottom: calc(env(safe-area-inset-bottom) + 20px); width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 15; }
-        button { width: 90%; height: 55px; border-radius: 16px; border: none; font-size: 17px; font-weight: 700; transition: 0.2s; }
-        #startBtn { background: var(--primary); color: white; }
-        #cameraBtn { background: rgba(0,0,0,0.8); color: var(--neon); border: 2px solid var(--neon); display: none; }
-    </style>
+    .status-bar { display:flex; gap:8px; position:absolute; top:calc(env(safe-area-inset-top) + 15px); z-index:15; }
+    .indicator { padding:4px 10px; border-radius:15px; font-size:10px; background:rgba(0,0,0,.6); color:#666; border:1px solid #333; backdrop-filter:blur(5px); }
+    .ind-active { border-color:var(--neon); color:var(--neon); box-shadow:0 0 5px var(--neon); }
+
+    .header { margin-top:auto; margin-bottom:20px; text-align:center; z-index:15; }
+    #counter { font-size:150px; font-weight:900; color:var(--success); text-shadow:0 0 30px var(--success); line-height:1; margin:0; }
+    #log { font-size:14px; color:#fff; height:20px; text-shadow:0 1px 3px rgba(0,0,0,.8); margin-top:10px; }
+
+    .panel { background:rgba(10,10,12,.6); width:90%; padding:20px; border-radius:24px; box-sizing:border-box; z-index:15; border:1px solid rgba(255,255,255,.1); backdrop-filter:blur(15px); -webkit-backdrop-filter:blur(15px); margin-bottom:15px; }
+    .switch-row { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+
+    input[type="checkbox"] { width:50px; height:26px; appearance:none; background:rgba(255,255,255,.1); border-radius:20px; position:relative; border:1px solid rgba(255,255,255,.2); }
+    input[type="checkbox"]:checked { background:var(--primary); }
+    input[type="checkbox"]:before { content:''; position:absolute; width:22px; height:22px; background:white; border-radius:50%; top:1px; left:1px; transition:.3s; }
+    input[type="checkbox"]:checked:before { left:25px; }
+
+    .controls { margin-bottom:calc(env(safe-area-inset-bottom) + 20px); width:100%; display:flex; flex-direction:column; align-items:center; gap:10px; z-index:15; }
+    button { width:90%; height:55px; border-radius:16px; border:none; font-size:17px; font-weight:700; transition:.2s; }
+    #startBtn { background:var(--primary); color:white; }
+    #cameraBtn { background:rgba(0,0,0,.8); color:var(--neon); border:2px solid var(--neon); display:none; }
+    #resetBtn { background:rgba(255,255,255,.08); color:#fff; }
+    .hint { font-size:12px; color:#aaa; line-height:1.35; width:90%; z-index:15; text-align:left; opacity:.9; }
+
+    /* 滑条 */
+    input[type="range"] { -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:10px; background:rgba(255,255,255,.12); outline:none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:#fff; border:2px solid rgba(0,0,0,.3); }
+  </style>
 </head>
+
 <body>
+  <div id="video-container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="canvas-overlay"></canvas>
+  </div>
 
-    <div id="video-container">
-        <video id="webcam" autoplay playsinline muted></video>
-        <canvas id="canvas-overlay"></canvas>
+  <canvas id="visualizer"></canvas>
+
+  <div class="status-bar">
+    <div id="ind-audio" class="indicator">声音: 待机</div>
+    <div id="ind-vision" class="indicator">AR: 禁用</div>
+    <div id="ind-ai" class="indicator">AI: 待命</div>
+  </div>
+
+  <div class="header">
+    <div id="counter">0</div>
+    <div id="log">准备就绪 // 先启动音频</div>
+  </div>
+
+  <div class="panel">
+    <div class="switch-row">
+      <span>开启全屏 AR 视觉背景</span>
+      <input type="checkbox" id="visionToggle" />
     </div>
 
-    <canvas id="visualizer"></canvas>
-
-    <div class="status-bar">
-        <div id="ind-audio" class="indicator">声音: 待机</div>
-        <div id="ind-vision" class="indicator">AR: 禁用</div>
-        <div id="ind-ai" class="indicator">AI: 待命</div>
+    <div style="margin-top:14px; font-size:12px; color:#bbb;">
+      音频触发阈值 (RMS)：<span id="threshVal">0.12</span>
     </div>
+    <input type="range" id="threshSlider" min="0.02" max="0.35" step="0.005" value="0.12" style="margin-top:10px;" />
 
-    <div class="header">
-        <div id="counter">0</div>
-        <div id="log">准备就绪 // 等待音频上行</div>
+    <div style="margin-top:14px; font-size:12px; color:#bbb;">
+      冷却时间(ms)：<span id="coolVal">750</span>
     </div>
+    <input type="range" id="coolSlider" min="250" max="1500" step="50" value="750" style="margin-top:10px;" />
 
-    <div class="panel">
-        <div class="switch-row">
-            <span>开启全屏 AR 视觉背景</span>
-            <input type="checkbox" id="visionToggle">
-        </div>
-        <input type="range" id="threshSlider" style="width:100%; margin-top:20px;" min="0.05" max="0.8" step="0.01" value="0.35">
+    <div style="margin-top:14px; font-size:12px; color:#bbb;">
+      手腕距离/肩宽 比值上限（越小越严格）：<span id="ratioVal">1.60</span>
     </div>
+    <input type="range" id="ratioSlider" min="1.10" max="2.50" step="0.05" value="1.60" style="margin-top:10px;" />
 
-    <div class="controls">
-        <button id="cameraBtn">开启背景视频</button>
-        <button id="startBtn">启动音频监测</button>
-        <button style="background:none; color:#555; height:30px; font-size:12px;" onclick="location.reload()">强制刷新</button>
+    <div style="margin-top:14px; font-size:12px; color:#bbb;">
+      绘制骨架叠加（调试用）
+      <input type="checkbox" id="drawToggle" style="vertical-align:middle; margin-left:10px;" />
     </div>
+  </div>
+
+  <div class="controls">
+    <button id="cameraBtn">【第 2 步】开启背景视频</button>
+    <button id="startBtn">【第 1 步】启动音频监测</button>
+    <button id="resetBtn">重置计数</button>
+    <button style="background:none; color:#555; height:30px; font-size:12px;" onclick="location.reload()">强制刷新</button>
+    <div class="hint">
+      使用建议：先把阈值调到“环境安静不触发、拍手能触发”。在室外/风大时阈值一般要略调高。开启 AR 后，如果误计数多，降低“比值上限”或增大“冷却时间”。
+    </div>
+  </div>
 
 <script type="module">
-    let count = 0, isRunning = false, lastEventTime = 0, audioCtx, analyser, dataArray, poseLandmarker;
-    let isVisionActive = false, isAIReady = false, streamActive = false;
-    
-    const vision = window.tasksVision;
-    const webcam = document.getElementById("webcam");
+  // ====== 状态 ======
+  let count = 0;
+  let isRunning = false;
+  let lastEventTime = 0;
 
-    // 1. 频谱绘制
-    function drawVisualizer() {
-        if (!analyser) return;
-        const canvas = document.getElementById('visualizer'), ctx = canvas.getContext('2d');
-        const w = canvas.width = window.innerWidth, h = canvas.height = 180;
-        analyser.getFloatTimeDomainData(dataArray);
-        ctx.clearRect(0,0,w,h);
-        ctx.beginPath(); ctx.lineWidth = 2.5;
-        ctx.strokeStyle = isVisionActive ? '#00f2ff' : '#00ff41';
-        for(let i=0; i<dataArray.length; i++) {
-            const x = (i/dataArray.length)*w, y = (dataArray[i]*h*1.8)+h/2;
-            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-        }
-        ctx.stroke();
-        requestAnimationFrame(drawVisualizer);
+  let audioCtx = null;
+  let analyser = null;
+  let dataArray = null;
+  let micStream = null;
+
+  let isVisionActive = false;
+  let isAIReady = false;
+  let streamActive = false;
+
+  let poseLandmarker = null;
+  let lastPoseAt = 0; // 限制视觉检测频率
+  const POSE_INTERVAL_MS = 80; // 视觉检测最大频率（降低卡顿）
+
+  const vision = window.tasksVision;
+
+  // ====== DOM ======
+  const webcam = document.getElementById("webcam");
+  const videoContainer = document.getElementById("video-container");
+  const canvasOverlay = document.getElementById("canvas-overlay");
+  const overlayCtx = canvasOverlay.getContext("2d");
+
+  const indAudio = document.getElementById("ind-audio");
+  const indVision = document.getElementById("ind-vision");
+  const indAI = document.getElementById("ind-ai");
+
+  const logEl = document.getElementById("log");
+  const counterEl = document.getElementById("counter");
+
+  const startBtn = document.getElementById("startBtn");
+  const cameraBtn = document.getElementById("cameraBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  const visionToggle = document.getElementById("visionToggle");
+  const drawToggle = document.getElementById("drawToggle");
+
+  const threshSlider = document.getElementById("threshSlider");
+  const coolSlider = document.getElementById("coolSlider");
+  const ratioSlider = document.getElementById("ratioSlider");
+
+  const threshVal = document.getElementById("threshVal");
+  const coolVal = document.getElementById("coolVal");
+  const ratioVal = document.getElementById("ratioVal");
+
+  function setIndicator(el, active, onText, offText) {
+    el.classList.toggle("ind-active", !!active);
+    if (onText && offText) el.textContent = active ? onText : offText;
+  }
+
+  function setLog(msg) { logEl.textContent = msg; }
+
+  // ====== UI 联动 ======
+  function syncSliderLabels() {
+    threshVal.textContent = Number(threshSlider.value).toFixed(3);
+    coolVal.textContent = String(coolSlider.value);
+    ratioVal.textContent = Number(ratioSlider.value).toFixed(2);
+  }
+  syncSliderLabels();
+  threshSlider.oninput = syncSliderLabels;
+  coolSlider.oninput = syncSliderLabels;
+  ratioSlider.oninput = syncSliderLabels;
+
+  resetBtn.onclick = () => {
+    count = 0;
+    counterEl.textContent = "0";
+    setLog("计数已重置");
+  };
+
+  // ====== 频谱绘制（时域波形） ======
+  function drawVisualizer() {
+    if (!analyser || !dataArray) return;
+    const canvas = document.getElementById("visualizer");
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width = window.innerWidth;
+    const h = canvas.height = 180;
+
+    analyser.getFloatTimeDomainData(dataArray);
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = isVisionActive ? "#00f2ff" : "#00ff41";
+
+    for (let i = 0; i < dataArray.length; i++) {
+      const x = (i / dataArray.length) * w;
+      const y = (dataArray[i] * h * 1.8) + h / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    requestAnimationFrame(drawVisualizer);
+  }
+
+  // ====== 音频：RMS ======
+  function computeRMS(buf) {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = buf[i];
+      sum += v * v;
+    }
+    return Math.sqrt(sum / buf.length);
+  }
+
+  // ====== 视觉：基础工具 ======
+  function d(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function lmOK(pt) {
+    // mediapipe tasks 的 landmark 通常带 presence/visibility（不保证都有）
+    // 这里做宽松判定：若字段存在，则要求>0.4，否则视为OK
+    const vis = (pt.visibility ?? 1);
+    const pre = (pt.presence ?? 1);
+    return vis > 0.4 && pre > 0.4;
+  }
+
+  function ensureOverlaySize() {
+    // 叠加层按 video 的实际像素尺寸绘制，再通过 CSS 拉伸到全屏
+    const vw = webcam.videoWidth || 0;
+    const vh = webcam.videoHeight || 0;
+    if (vw && vh) {
+      if (canvasOverlay.width !== vw) canvasOverlay.width = vw;
+      if (canvasOverlay.height !== vh) canvasOverlay.height = vh;
+    }
+  }
+
+  function clearOverlay() {
+    overlayCtx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+  }
+
+  function drawLandmarks(lm) {
+    // 简单画点 + 关键连线（肩-肘-腕）
+    ensureOverlaySize();
+    clearOverlay();
+    if (!lm) return;
+
+    const W = canvasOverlay.width, H = canvasOverlay.height;
+
+    function dot(i, r=4) {
+      const p = lm[i];
+      overlayCtx.beginPath();
+      overlayCtx.arc(p.x * W, p.y * H, r, 0, Math.PI * 2);
+      overlayCtx.fill();
     }
 
-    // 2. 音频启动
-    document.getElementById('startBtn').onclick = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioCtx.createMediaStreamSource(stream);
-            analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
-            source.connect(analyser); dataArray = new Float32Array(analyser.fftSize);
-
-            isRunning = true;
-            document.getElementById('startBtn').style.display = 'none';
-            document.getElementById('ind-audio').classList.add('ind-active');
-            document.getElementById('log').innerText = "音频已锁定，可开启 AR 背景";
-            requestAnimationFrame(drawVisualizer);
-            requestAnimationFrame(audioLoop);
-        } catch (err) { alert("麦克风启动失败，请检查 HTTPS 权限"); }
-    };
-
-    // 3. 视觉权限修复：分步解耦
-    document.getElementById('visionToggle').onchange = (e) => {
-        if (e.target.checked) {
-            document.getElementById('cameraBtn').style.display = 'block';
-            document.getElementById('log').innerText = "请点击上方按钮开启视频";
-        } else {
-            document.getElementById('cameraBtn').style.display = 'none';
-            document.getElementById('video-container').style.display = "none";
-            isVisionActive = false;
-        }
-    };
-
-    document.getElementById('cameraBtn').onclick = async () => {
-        try {
-            // A. 第一步：仅启动视频流，不加载 AI
-            if (!streamActive) {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-                webcam.srcObject = stream;
-                streamActive = true;
-            }
-            
-            document.getElementById('video-container').style.display = "block";
-            document.getElementById('ind-vision').classList.add('ind-active');
-            document.getElementById('cameraBtn').innerText = "正在激活 AI 引擎...";
-            isVisionActive = true;
-
-            // B. 第二步：异步静默加载 AI
-            if (!isAIReady) {
-                const FilesetResolver = await vision.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-                poseLandmarker = await vision.PoseLandmarker.createFromOptions(FilesetResolver, {
-                    baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`, delegate: "GPU" },
-                    runningMode: "VIDEO", numPoses: 1
-                });
-                isAIReady = true;
-                document.getElementById('ind-ai').classList.add('ind-active');
-                document.getElementById('log').innerText = "AR 画面与 AI 引擎已同步";
-            }
-            document.getElementById('cameraBtn').style.display = 'none';
-        } catch (err) { alert("摄像头启动失败：请检查 Safari 隐私设置"); }
-    };
-
-    // 4. 判定循环
-    function audioLoop() {
-        if (!isRunning) return;
-        analyser.getFloatTimeDomainData(dataArray);
-        let maxAmp = 0;
-        for (let i = 0; i < dataArray.length; i++) maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
-        const threshold = parseFloat(document.getElementById('threshSlider').value);
-        const now = Date.now();
-
-        if (maxAmp > threshold && (now - lastEventTime > 750)) {
-            let pass = true;
-            // 只有视频在运行且 AI 就绪时才进行姿态校验
-            if (isVisionActive && isAIReady && poseLandmarker) {
-                const res = poseLandmarker.detectForVideo(webcam, performance.now());
-                if (res.landmarks.length > 0) {
-                    const lm = res.landmarks[0];
-                    const dist = Math.sqrt(Math.pow(lm[15].x - lm[16].x, 2) + Math.pow(lm[15].y - lm[16].y, 2));
-                    if (dist > 0.4) pass = false; 
-                }
-            }
-            if (pass) {
-                count++; lastEventTime = now;
-                document.getElementById('counter').innerText = count;
-                if (navigator.vibrate) navigator.vibrate(60);
-            }
-        }
-        requestAnimationFrame(audioLoop);
+    function line(i, j, w=3) {
+      const a = lm[i], b = lm[j];
+      overlayCtx.lineWidth = w;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(a.x * W, a.y * H);
+      overlayCtx.lineTo(b.x * W, b.y * H);
+      overlayCtx.stroke();
     }
-    window.resetCount = () => { count = 0; document.getElementById('counter').innerText = 0; };
+
+    overlayCtx.fillStyle = "rgba(0,242,255,0.95)";
+    overlayCtx.strokeStyle = "rgba(0,242,255,0.6)";
+
+    // 11-12肩，13-15左臂，14-16右臂
+    line(11, 12, 4);
+    line(11, 13, 3); line(13, 15, 3);
+    line(12, 14, 3); line(14, 16, 3);
+
+    dot(11, 5); dot(12, 5);
+    dot(15, 6); dot(16, 6);
+  }
+
+  // ====== 启动音频 ======
+  startBtn.onclick = async () => {
+    if (isRunning) return;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // iOS 关键：强制 resume
+      await audioCtx.resume();
+
+      const source = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+
+      dataArray = new Float32Array(analyser.fftSize);
+      isRunning = true;
+
+      startBtn.style.display = "none";
+      setIndicator(indAudio, true, "声音: 运行", "声音: 待机");
+      setLog("音频已锁定，可开启 AR 背景");
+      requestAnimationFrame(drawVisualizer);
+      requestAnimationFrame(audioLoop);
+
+    } catch (err) {
+      alert("麦克风启动失败：请确认使用 HTTPS，并允许麦克风权限");
+      console.error(err);
+    }
+  };
+
+  // ====== 视频流生命周期 ======
+  async function startVideoStream() {
+    if (streamActive) return;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" }
+    });
+    webcam.srcObject = stream;
+
+    await new Promise((resolve) => {
+      webcam.onloadedmetadata = () => resolve();
+    });
+    await webcam.play();
+
+    streamActive = true;
+  }
+
+  function stopVideoStream() {
+    const stream = webcam.srcObject;
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      webcam.srcObject = null;
+    }
+    streamActive = false;
+  }
+
+  // ====== AI 引擎加载（只加载一次，可复用） ======
+  async function ensureAI() {
+    if (isAIReady && poseLandmarker) return;
+
+    const FilesetResolver = await vision.FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+    );
+
+    poseLandmarker = await vision.PoseLandmarker.createFromOptions(FilesetResolver, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numPoses: 1
+    });
+
+    isAIReady = true;
+    setIndicator(indAI, true, "AI: 就绪", "AI: 待命");
+  }
+
+  // ====== UI：开启/关闭 AR ======
+  visionToggle.onchange = (e) => {
+    if (e.target.checked) {
+      cameraBtn.style.display = "block";
+      setLog("请点击“开启背景视频”");
+    } else {
+      cameraBtn.style.display = "none";
+      videoContainer.style.display = "none";
+      isVisionActive = false;
+      setIndicator(indVision, false, "AR: 开启", "AR: 禁用");
+      clearOverlay();
+      stopVideoStream();
+      // AI 不强制卸载（卸载需要更多 wasm 清理，收益不大）
+      setLog("AR 已关闭（视频流已停止）");
+    }
+  };
+
+  cameraBtn.onclick = async () => {
+    try {
+      if (!isRunning) {
+        setLog("请先启动音频（第 1 步）");
+        return;
+      }
+
+      cameraBtn.disabled = true;
+      cameraBtn.textContent = "正在开启摄像头...";
+      await startVideoStream();
+
+      videoContainer.style.display = "block";
+      isVisionActive = true;
+      setIndicator(indVision, true, "AR: 开启", "AR: 禁用");
+
+      cameraBtn.textContent = "正在激活 AI 引擎...";
+      await ensureAI();
+
+      setLog("AR 画面与 AI 引擎已同步");
+      cameraBtn.style.display = "none";
+      cameraBtn.disabled = false;
+
+    } catch (err) {
+      alert("摄像头/AI 启动失败：请检查 Safari 隐私设置、相机权限，并确保 HTTPS");
+      console.error(err);
+      cameraBtn.disabled = false;
+      cameraBtn.textContent = "【第 2 步】开启背景视频";
+    }
+  };
+
+  // ====== 视觉校验：手腕距离/肩宽比 ======
+  function visionCheck() {
+    // 默认通过
+    if (!isVisionActive || !isAIReady || !poseLandmarker || !streamActive) return { pass: true, drew: false };
+
+    const now = Date.now();
+    if (now - lastPoseAt < POSE_INTERVAL_MS) {
+      // 视觉检测降频：不每帧跑
+      return { pass: true, drew: false };
+    }
+    lastPoseAt = now;
+
+    // detectForVideo 需要 timestamp（ms 或 performance.now）
+    const res = poseLandmarker.detectForVideo(webcam, performance.now());
+    if (!res || !res.landmarks || res.landmarks.length === 0) {
+      if (drawToggle.checked) clearOverlay();
+      return { pass: true, drew: false }; // 没识别到人，不做阻断
+    }
+
+    const lm = res.landmarks[0];
+    // 关键点：11/12肩，15/16手腕
+    if (!lm[11] || !lm[12] || !lm[15] || !lm[16]) return { pass: true, drew: false };
+
+    // 可见性检查（更鲁棒）
+    if (!(lmOK(lm[11]) && lmOK(lm[12]) && lmOK(lm[15]) && lmOK(lm[16]))) {
+      if (drawToggle.checked) {
+        drawLandmarks(lm);
+        return { pass: true, drew: true };
+      }
+      return { pass: true, drew: false };
+    }
+
+    const shoulder = d(lm[11], lm[12]) + 1e-6;
+    const wrist = d(lm[15], lm[16]);
+    const ratio = wrist / shoulder;
+    const ratioLimit = parseFloat(ratioSlider.value);
+
+    const pass = ratio <= ratioLimit;
+
+    if (drawToggle.checked) {
+      drawLandmarks(lm);
+      // 右上角显示 ratio
+      ensureOverlaySize();
+      overlayCtx.fillStyle = "rgba(0,0,0,0.35)";
+      overlayCtx.fillRect(10, 10, 220, 40);
+      overlayCtx.fillStyle = "rgba(0,242,255,0.95)";
+      overlayCtx.font = "20px -apple-system, sans-serif";
+      overlayCtx.fillText(`ratio: ${ratio.toFixed(2)}`, 20, 38);
+      return { pass, drew: true };
+    } else {
+      clearOverlay();
+      return { pass, drew: false };
+    }
+  }
+
+  // ====== 主循环：音频触发 + 可选视觉阻断 ======
+  function audioLoop() {
+    if (!isRunning || !analyser || !dataArray) return;
+
+    analyser.getFloatTimeDomainData(dataArray);
+    const rms = computeRMS(dataArray);
+
+    const threshold = parseFloat(threshSlider.value);
+    const cooldown = parseInt(coolSlider.value, 10);
+    const now = Date.now();
+
+    if (rms > threshold && (now - lastEventTime > cooldown)) {
+      let pass = true;
+
+      // 视觉校验（可选）
+      if (isVisionActive && isAIReady) {
+        const v = visionCheck();
+        pass = v.pass;
+      }
+
+      if (pass) {
+        count++;
+        lastEventTime = now;
+        counterEl.textContent = String(count);
+
+        // iOS: 震动只有部分设备支持
+        if (navigator.vibrate) navigator.vibrate(60);
+
+        setLog(`触发成功 // RMS=${rms.toFixed(3)}`);
+      } else {
+        setLog(`被视觉规则阻断 // RMS=${rms.toFixed(3)}`);
+      }
+    }
+
+    requestAnimationFrame(audioLoop);
+  }
+
+  // ====== 页面隐藏/切回处理（防止后台继续采集） ======
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+      // 进入后台：停止视频流（隐私/电量）
+      if (isVisionActive) {
+        stopVideoStream();
+        videoContainer.style.display = "none";
+        isVisionActive = false;
+        setIndicator(indVision, false, "AR: 开启", "AR: 禁用");
+        setLog("页面进入后台：已停止摄像头");
+        // 勾选状态也同步关掉（避免 UI 与实际不一致）
+        visionToggle.checked = false;
+        cameraBtn.style.display = "none";
+      }
+      // 音频 ctx 可选择 suspend（更省电）
+      if (audioCtx && audioCtx.state === "running") {
+        try { await audioCtx.suspend(); } catch {}
+      }
+    } else {
+      // 回到前台：恢复音频 ctx
+      if (audioCtx && audioCtx.state === "suspended") {
+        try { await audioCtx.resume(); } catch {}
+      }
+    }
+  });
+
+  // ====== 暴露调试接口 ======
+  window.resetCount = () => { count = 0; counterEl.textContent = "0"; };
 </script>
 </body>
 </html>
