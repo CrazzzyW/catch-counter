@@ -3,33 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>接球计数器 Pro - 权限分离版</title>
+    <title>接球计数器 Pro - 滤波+视觉双重版</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
         :root { --primary: #007aff; --success: #34c759; --bg: #000; }
-        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* 视频区域初始高度为0，仅在开启视觉时展开 */
-        #video-container { position: relative; width: 100%; height: 0; background: #111; transition: height 0.5s ease; overflow: hidden; }
+        /* 视频区域：仅在开启视觉时显示 */
+        #video-container { position: relative; width: 100%; height: 0; background: #111; transition: height 0.4s ease; overflow: hidden; border-bottom: 1px solid #333; }
         #webcam { width: 100%; height: 100%; object-fit: cover; transform: rotateY(180deg); }
         #canvas-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); pointer-events: none; }
 
-        .header { text-align: center; padding: 20px 0; }
-        #counter { font-size: 120px; font-weight: 800; color: var(--success); margin: 0; }
-        #log { font-size: 14px; color: #888; margin-top: 10px; height: 20px; }
+        .header { text-align: center; padding: 20px 0; flex-shrink: 0; }
+        #counter { font-size: 130px; font-weight: 800; color: var(--success); line-height: 1; margin: 0; }
+        #log { font-size: 14px; color: var(--primary); margin-top: 15px; height: 20px; font-weight: 500; }
         
-        .panel { background: #1c1c1e; width: 90%; margin: 10px auto; padding: 20px; border-radius: 20px; flex-grow: 1; }
+        .panel { background: #1c1c1e; width: 92%; margin: 0 auto; padding: 20px; border-radius: 24px; box-sizing: border-box; flex-grow: 1; overflow-y: auto; }
         .switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         
-        /* 基础开关样式 */
-        input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: #333; border-radius: 20px; position: relative; }
-        input[type="checkbox"]:checked { background: var(--primary); }
-        input[type="checkbox"]:before { content: ''; position: absolute; width: 20px; height: 20px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: 0.2s; }
+        /* 开关样式 */
+        input[type="checkbox"] { width: 46px; height: 26px; appearance: none; background: #333; border-radius: 20px; position: relative; outline: none; transition: .3s; }
+        input[type="checkbox"]:checked { background: var(--success); }
+        input[type="checkbox"]:before { content: ''; position: absolute; width: 22px; height: 22px; background: white; border-radius: 50%; top: 2px; left: 2px; transition: .3s; }
         input[type="checkbox"]:checked:before { left: 22px; }
 
-        .controls { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        button { width: 100%; height: 55px; border-radius: 15px; border: none; font-size: 18px; font-weight: 600; }
-        #mainBtn { background: var(--primary); color: white; }
+        .setting-label { display: flex; justify-content: space-between; font-size: 13px; color: #888; margin-bottom: 8px; }
+        input[type=range] { width: 100%; height: 6px; background: #333; border-radius: 5px; appearance: none; outline: none; }
+
+        .controls { padding: 20px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; }
+        button { width: 100%; height: 55px; border-radius: 16px; border: none; font-size: 18px; font-weight: 600; cursor: pointer; }
+        #startBtn { background: var(--primary); color: white; }
     </style>
 </head>
 <body>
@@ -41,12 +44,12 @@
 
     <div class="header">
         <div id="counter">0</div>
-        <div id="log">准备就绪</div>
+        <div id="log">等待初始化...</div>
     </div>
 
     <div class="panel">
         <div class="switch-row">
-            <span>开启视觉校验 (需摄像头)</span>
+            <span>视觉辅助校验 (防止噪音误报)</span>
             <input type="checkbox" id="visionToggle">
         </div>
         <div class="switch-row">
@@ -54,56 +57,65 @@
             <input type="checkbox" id="roiToggle">
         </div>
         
-        <div style="margin-top: 20px;">
-            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #888;">
-                <span>声音灵敏度</span><span id="threshVal">0.35</span>
-            </div>
-            <input type="range" id="threshSlider" style="width:100%" min="0.05" max="0.8" step="0.01" value="0.35">
+        <div class="setting-item">
+            <div class="setting-label"><span>触发灵敏度 (阈值)</span><span id="threshVal">0.35</span></div>
+            <input type="range" id="threshSlider" min="0.05" max="0.8" step="0.01" value="0.35">
+        </div>
+        
+        <div style="margin-top: 20px; font-size: 12px; color: #555; text-align: center;">
+            提示：高通滤波器已锁定 3000Hz 以上撞击声
         </div>
     </div>
 
     <div class="controls">
-        <button id="mainBtn">启动音频监测</button>
-        <button style="background:#2c2c2e; color:#ccc;" onclick="location.reload()">重置</button>
+        <button id="startBtn">开始监测</button>
+        <button style="background:#2c2c2e; color:#ccc; height:45px;" onclick="location.reload()">重置刷新</button>
     </div>
 
 <script type="module">
     const vision = window.tasksVision;
-    let poseLandmarker, audioCtx, analyser, dataArray;
+    let poseLandmarker, audioCtx, analyser, dataArray, highPassFilter;
     let isAudioRunning = false, isVisionActive = false;
     let count = 0, lastEventTime = 0, personInROI = true;
 
-    // --- 1. 音频启动逻辑 ---
-    document.getElementById('mainBtn').onclick = async () => {
+    // --- 1. 核心音频初始化：沿用高通滤波逻辑 ---
+    document.getElementById('startBtn').onclick = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const source = audioCtx.createMediaStreamSource(stream);
+
+            // 滤波算法：切掉 3000Hz 以下，只保留清脆的撞击声
+            highPassFilter = audioCtx.createBiquadFilter();
+            highPassFilter.type = "highpass";
+            highPassFilter.frequency.value = 3000;
+
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 512;
-            source.connect(analyser);
+
+            source.connect(highPassFilter);
+            highPassFilter.connect(analyser);
             dataArray = new Float32Array(analyser.fftSize);
 
             isAudioRunning = true;
-            document.getElementById('mainBtn').style.display = 'none';
-            document.getElementById('log').innerText = "音频监测中...";
-            requestAnimationFrame(audioLoop);
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('log').innerText = "监测中 | 高频滤波已激活";
+            requestAnimationFrame(mainLoop);
         } catch (err) {
-            alert("请允许麦克风权限以开始计数");
+            alert("请允许麦克风权限");
         }
     };
 
-    // --- 2. 视觉权限按需获取 ---
+    // --- 2. 视觉功能：按需开启 ---
     document.getElementById('visionToggle').onchange = async (e) => {
         if (e.target.checked) {
             try {
-                document.getElementById('log').innerText = "正在请求摄像头...";
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
                 document.getElementById('webcam').srcObject = stream;
                 document.getElementById('video-container').style.height = "30vh";
                 
-                // 加载 MediaPipe 模型
                 if (!poseLandmarker) {
+                    document.getElementById('log').innerText = "加载 AI 模型...";
                     const filesetResolver = await vision.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
                     poseLandmarker = await vision.PoseLandmarker.createFromOptions(filesetResolver, {
                         baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`, delegate: "GPU" },
@@ -111,63 +123,78 @@
                     });
                 }
                 isVisionActive = true;
-                document.getElementById('log').innerText = "声影双重监测已激活";
+                document.getElementById('log').innerText = "声影双重校验已就绪";
             } catch (err) {
                 e.target.checked = false;
-                alert("无法获取摄像头权限");
+                alert("无法获取摄像头");
             }
         } else {
             isVisionActive = false;
             document.getElementById('video-container').style.height = "0";
-            document.getElementById('log').innerText = "切换回纯音频模式";
         }
     };
 
-    // --- 3. 混合检测循环 ---
-    function audioLoop() {
+    // --- 3. 主检测循环：音频触发 -> 视觉校验 ---
+    function mainLoop() {
         if (!isAudioRunning) return;
 
-        // 音频分析
+        // 音频分析：检测高频脉冲
         analyser.getFloatTimeDomainData(dataArray);
         let maxAmp = 0;
-        for (let i = 0; i < dataArray.length; i++) maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
+        for (let i = 0; i < dataArray.length; i++) {
+            maxAmp = Math.max(maxAmp, Math.abs(dataArray[i]));
+        }
 
         const now = Date.now();
         const threshold = parseFloat(document.getElementById('threshSlider').value);
         document.getElementById('threshVal').innerText = threshold;
 
-        if (maxAmp > threshold && (now - lastEventTime > 700)) {
-            // 如果开启了视觉，进行二次校验
+        // 音频触发点
+        if (maxAmp > threshold && (now - lastEventTime > 750)) {
             let passVision = true;
+
+            // 如果开启视觉校验
             if (isVisionActive && poseLandmarker) {
                 const results = poseLandmarker.detectForVideo(document.getElementById('webcam'), performance.now());
-                passVision = checkPose(results);
+                passVision = validateByPose(results);
             }
 
             if (passVision) {
                 count++;
                 lastEventTime = now;
                 document.getElementById('counter').innerText = count;
+                document.getElementById('log').innerText = isVisionActive ? "视觉校验通过！" : "音频触发计数";
                 if (navigator.vibrate) navigator.vibrate(50);
+            } else {
+                document.getElementById('log').innerText = "噪音已过滤 (视觉未匹配)";
             }
         }
-        requestAnimationFrame(audioLoop);
+        requestAnimationFrame(mainLoop);
     }
 
-    function checkPose(results) {
-        if (!results || results.landmarks.length === 0) return true; // 没拍到人时回退到纯音频
+    // 视觉辅助判定子函数
+    function validateByPose(results) {
+        if (!results || results.landmarks.length === 0) return true; // 没拍到人时默认信任音频
+        
         const lm = results.landmarks[0];
         
-        // ROI 判定：人在画面横向 20%-80% 之间
+        // A. ROI 锁定：检查人体中心点
         if (document.getElementById('roiToggle').checked) {
             const centerX = (lm[23].x + lm[24].x) / 2;
             if (centerX < 0.2 || centerX > 0.8) return false;
         }
-        
-        // 视觉加速度补偿：接球时双手应靠近
+
+        // B. 动作校验：接球瞬间手部应在胸前或头前（y坐标较小，x坐标靠近）
         const dist = Math.sqrt(Math.pow(lm[15].x - lm[16].x, 2) + Math.pow(lm[15].y - lm[16].y, 2));
-        return dist < 0.25; 
+        if (dist > 0.3) return false; // 如果两手分得很开，显然不是接球动作
+
+        return true;
     }
+
+    // 灵敏度滑动条实时更新
+    document.getElementById('threshSlider').oninput = (e) => {
+        document.getElementById('threshVal').innerText = e.target.value;
+    };
 </script>
 </body>
 </html>
